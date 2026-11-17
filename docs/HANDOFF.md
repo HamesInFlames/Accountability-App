@@ -14,7 +14,7 @@ State of the build on 2026-11-17, and what it takes to get from here to the stor
 | Area | Verified by | Result |
 | --- | --- | --- |
 | Rules (tasks, end-of-day, strikes, votes, recap) | `npm test` | 39 tests pass |
-| Schema, access rules, write functions | `npm run test:db` on Postgres 16 | 30 expectations and 25 refusal cases pass |
+| Schema, access rules, write functions | `npm run test:db` on Postgres 16 | 30 expectations and 31 refusal cases pass |
 | Every MVP flow in the demo | `tests/e2e/demo.e2e.cjs`, phone-sized Chromium | Both walkthroughs pass |
 | Accessibility | `tests/e2e/a11y.e2e.cjs`, axe-core WCAG 2 A/AA | 13 screens, no violations |
 | Types | `npm run typecheck` (strict) | Clean |
