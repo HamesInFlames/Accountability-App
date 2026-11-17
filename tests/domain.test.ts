@@ -14,6 +14,8 @@ import {
   memberDay,
   recap,
   resolveStrike,
+  MAX_CATCH_UP_DAYS,
+  settle,
   strikesInCycle,
   validExplanation,
   weekday,
@@ -312,5 +314,90 @@ describe('recap', () => {
     expect(r.rows.find((x) => x.userId === 'c')).toMatchObject({ checkins: 0, strikes: 1 });
     expect(r.photos).toHaveLength(3);
     expect(r.owesForfeit).toEqual(['c']);
+  });
+});
+
+describe('settle (the full end-of-day job)', () => {
+  const zones = [
+    { id: 'a', timezone: 'America/Toronto' },
+    { id: 'b', timezone: 'America/Toronto' },
+    { id: 'c', timezone: 'Asia/Seoul' },
+  ];
+  const group = (over: Partial<GroupSnapshot['group']> = {}): GroupSnapshot['group'] => ({
+    id: 'g', name: 'G', forfeit: '', inviteCode: 'X', currentStreak: 2, bestStreak: 2,
+    lastClosedDate: addDays(MON, -1), createdAt: '2026-11-01T00:00:00Z', ...over,
+  });
+  let n = 0;
+  const newId = () => `new${++n}`;
+  // 05:00 UTC on Tuesday: Monday has just ended in Toronto, the last zone.
+  const tuesdayAfterMidnight = Date.UTC(2026, 10, 17, 5, 0);
+
+  it('does nothing while the day is still running for someone', () => {
+    const tasks = zones.map((m) => task(m.id));
+    const r = settle({ group: group(), members: zones, tasks, checkins: [], strikes: [], votes: [], now: Date.UTC(2026, 10, 17, 4, 59), newId });
+    expect(r.closedDates).toEqual([]);
+    expect(r.newStrikes).toEqual([]);
+  });
+
+  it('closes the day, strikes the member who missed and holds the streak', () => {
+    const tasks = zones.map((m) => task(m.id));
+    const checkins = [checkin(tasks[0]!, MON), checkin(tasks[1]!, MON)];
+    const r = settle({ group: group(), members: zones, tasks, checkins, strikes: [], votes: [], now: tuesdayAfterMidnight, newId });
+    expect(r.closedDates).toEqual([MON]);
+    expect(r.newStrikes.map((s) => s.userId)).toEqual(['c']);
+    expect(r.group).toMatchObject({ currentStreak: 2, lastClosedDate: MON });
+  });
+
+  it('is idempotent: a second run adds nothing', () => {
+    const tasks = zones.map((m) => task(m.id));
+    const first = settle({ group: group(), members: zones, tasks, checkins: [], strikes: [], votes: [], now: tuesdayAfterMidnight, newId });
+    const again = settle({ group: first.group, members: zones, tasks, checkins: [], strikes: first.newStrikes, votes: [], now: tuesdayAfterMidnight, newId });
+    expect(again.closedDates).toEqual([]);
+    expect(again.newStrikes).toEqual([]);
+    expect(again.outcomes).toEqual([]);
+  });
+
+  it('catches up several days and grows the streak for each full day', () => {
+    const tasks = zones.map((m) => task(m.id));
+    const days = [MON, addDays(MON, 1), addDays(MON, 2)];
+    const checkins = days.flatMap((d) => tasks.map((t) => checkin(t, d)));
+    const r = settle({ group: group(), members: zones, tasks, checkins, strikes: [], votes: [], now: Date.UTC(2026, 10, 19, 5, 0), newId });
+    expect(r.closedDates).toEqual(days);
+    expect(r.group).toMatchObject({ currentStreak: 5, bestStreak: 5 });
+  });
+
+  it('starts a new group from its creation date', () => {
+    const r = settle({ group: group({ lastClosedDate: null, createdAt: '2026-11-16T15:00:00Z', currentStreak: 0, bestStreak: 0 }), members: zones, tasks: [], checkins: [], strikes: [], votes: [], now: tuesdayAfterMidnight, newId });
+    expect(r.closedDates).toEqual([MON]);
+  });
+
+  it('never reaches back more than the catch-up limit', () => {
+    const r = settle({ group: group({ lastClosedDate: '2026-01-01' }), members: zones, tasks: [], checkins: [], strikes: [], votes: [], now: tuesdayAfterMidnight, newId });
+    expect(r.closedDates.length).toBeLessThanOrEqual(MAX_CATCH_UP_DAYS + 1);
+    expect(r.group.lastClosedDate).toBe(MON);
+  });
+
+  it('breaks the streak when a third strike in the cycle is upheld by timeout', () => {
+    const tasks = zones.map((m) => task(m.id));
+    const s1 = strike('c', MON, { outcome: 'upheld' });
+    const s2 = strike('c', addDays(MON, 1), { outcome: 'upheld' });
+    const s3 = strike('c', addDays(MON, 2), { createdAt: '2026-11-19T05:00:00Z' });
+    const g = group({ lastClosedDate: addDays(MON, 3), currentStreak: 9, bestStreak: 9 });
+    const before = settle({ group: g, members: zones, tasks, checkins: [], strikes: [s1, s2, s3], votes: [], now: Date.parse('2026-11-20T04:00:00Z'), newId });
+    expect(before.streakBroken).toBe(false);
+    const after = settle({ group: g, members: zones, tasks, checkins: [], strikes: [s1, s2, s3], votes: [], now: Date.parse('2026-11-20T05:00:00Z'), newId });
+    expect(after.outcomes).toEqual([{ strikeId: s3.id, outcome: 'upheld' }]);
+    expect(after.streakBroken).toBe(true);
+    expect(after.group).toMatchObject({ currentStreak: 0, bestStreak: 9 });
+  });
+
+  it('keeps the streak when the group excuses the third strike', () => {
+    const s1 = strike('c', MON, { outcome: 'upheld' });
+    const s2 = strike('c', addDays(MON, 1), { outcome: 'upheld' });
+    const s3 = strike('c', addDays(MON, 2), { statement: 'Hospital', statementAt: '2026-11-19T06:00:00Z' });
+    const g = group({ lastClosedDate: addDays(MON, 3), currentStreak: 9, bestStreak: 9 });
+    const r = settle({ group: g, members: zones, tasks: [], checkins: [], strikes: [s1, s2, s3], votes: [vote(s3, 'a', 'excuse'), vote(s3, 'b', 'excuse')], now: Date.parse('2026-11-19T07:00:00Z'), newId });
+    expect(r.outcomes).toEqual([{ strikeId: s3.id, outcome: 'excused' }]);
+    expect(r.group.currentStreak).toBe(9);
   });
 });

@@ -5,3 +5,4 @@ export * from './tasks.ts';
 export * from './endOfDay.ts';
 export * from './strikes.ts';
 export * from './recap.ts';
+export * from './settle.ts';
