@@ -108,3 +108,8 @@ export function hoursLeft(deadlineMs: number, now: number): string {
   if (mins < 60) return `${mins} min left`;
   return `${Math.round(mins / 60)} h left`;
 }
+
+/** The group to open: the one in use, else the one last open on this device, else the first. */
+export function pickGroup<G extends { id: string }>(list: G[], wanted: string | null, stored: string | null): G | null {
+  return list.find((g) => g.id === (wanted ?? stored)) ?? list[0] ?? null;
+}

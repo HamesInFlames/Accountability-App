@@ -6,3 +6,4 @@
 ## Blocked
 
 ## Completed
+- [x] Remember the open group across a reload (2026-11-20)

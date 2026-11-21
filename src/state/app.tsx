@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { localNow, type DateStr, type Group, type GroupSnapshot, type TimeStr } from '@domain';
 
 import { backend, type Backend, type Me } from '@/data';
 import { syncReminders } from '@/lib/notifications';
+import { pickGroup } from '@/state/select';
 
 interface Toast {
   id: number;
@@ -31,6 +33,7 @@ interface AppValue {
 }
 
 const Ctx = createContext<AppValue | null>(null);
+const ACTIVE_GROUP_KEY = 'accountability.activeGroup';
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -62,7 +65,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
     const [list, blockedIds] = await Promise.all([backend.listGroups(), backend.listBlocked()]);
-    const current = list.find((g) => g.id === wanted.current) ?? list[0] ?? null;
+    // First load: reopen the group the member last had open.
+    const stored = wanted.current ? null : await AsyncStorage.getItem(ACTIVE_GROUP_KEY).catch(() => null);
+    const current = pickGroup(list, wanted.current, stored);
     setGroups(list);
     setBlocked(blockedIds);
     setGroupId(current?.id ?? null);
@@ -93,6 +98,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       notify('Could not load your data. Check your connection.', 'error');
     });
   }, [refresh, notify]);
+
+  // Remember the open group across reloads.
+  useEffect(() => {
+    if (groupId) void AsyncStorage.setItem(ACTIVE_GROUP_KEY, groupId).catch(() => undefined);
+  }, [groupId]);
 
   // Live updates for the open group, plus a settle pass so finished days close promptly.
   useEffect(() => {
