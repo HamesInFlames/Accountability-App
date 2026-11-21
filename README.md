@@ -27,7 +27,7 @@ and put the project URL and anon key in `.env.local` (see `.env.example`). Full 
 | Command | What it covers |
 | --- | --- |
 | `npm run typecheck` | Strict TypeScript across the app and shared rules |
-| `npm test` | 39 unit tests of the rules: tasks, end-of-day, strikes, votes, weekly recap |
+| `npm test` | 43 unit tests: the rules (tasks, end-of-day, strikes, votes, weekly recap) and which group opens |
 | `npm run test:db` | Schema, access rules and write functions against a real Postgres |
 | `node tests/e2e/demo.e2e.cjs` | Two full walkthroughs of the demo in a phone-sized browser |
 | `node tests/e2e/a11y.e2e.cjs` | axe-core WCAG 2 A/AA scan of 13 screens |

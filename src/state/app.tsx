@@ -5,6 +5,7 @@ import { localNow, type DateStr, type Group, type GroupSnapshot, type TimeStr } 
 
 import { backend, type Backend, type Me } from '@/data';
 import { syncReminders } from '@/lib/notifications';
+import { pickGroup } from '@/state/select';
 
 interface Toast {
   id: number;
@@ -65,8 +66,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const [list, blockedIds] = await Promise.all([backend.listGroups(), backend.listBlocked()]);
     // First load: reopen the group the member last had open.
-    const want = wanted.current ?? (await AsyncStorage.getItem(ACTIVE_GROUP_KEY).catch(() => null));
-    const current = list.find((g) => g.id === want) ?? list[0] ?? null;
+    const stored = wanted.current ? null : await AsyncStorage.getItem(ACTIVE_GROUP_KEY).catch(() => null);
+    const current = pickGroup(list, wanted.current, stored);
     setGroups(list);
     setBlocked(blockedIds);
     setGroupId(current?.id ?? null);
